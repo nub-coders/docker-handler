@@ -1,6 +1,8 @@
-import { users, type User, type InsertUser, type Container, type ContainerStats, type Image } from "@shared/schema";
+import { users, type User, type InsertUser, type Container, type ContainerStats, type Image, type SystemSpecs, type DockerResources } from "@shared/schema";
 import { exec } from "child_process";
 import { promisify } from "util";
+import * as os from "os";
+import * as fs from "fs";
 
 const execAsync = promisify(exec);
 
@@ -16,6 +18,12 @@ export interface IStorage {
   getContainerLogs(id: string, lines?: number): Promise<string>;
   listImages(): Promise<Image[]>;
   deleteImage(id: string): Promise<boolean>;
+  getSystemSpecs(): Promise<SystemSpecs>;
+  getDockerResources(): Promise<DockerResources>;
+  startMultipleContainers(ids: string[]): Promise<boolean[]>;
+  stopMultipleContainers(ids: string[]): Promise<boolean[]>;
+  deleteMultipleContainers(ids: string[]): Promise<boolean[]>;
+  deleteMultipleImages(ids: string[]): Promise<boolean[]>;
 }
 
 export class MemStorage implements IStorage {
@@ -201,6 +209,227 @@ export class MemStorage implements IStorage {
       console.error(`Error deleting image ${id}:`, error);
       return false;
     }
+  }
+
+  async getSystemSpecs(): Promise<SystemSpecs> {
+    try {
+      // Get CPU information
+      const { stdout: cpuInfo } = await execAsync("cat /proc/cpuinfo");
+      const cpuModel = cpuInfo.match(/model name\s*:\s*(.*)/)?.[1] || "Unknown CPU";
+      const cpuCores = os.cpus().length;
+
+      // Get memory information
+      const totalMemory = Math.round(os.totalmem() / (1024 * 1024)); // Convert to MB
+      const freeMemory = Math.round(os.freemem() / (1024 * 1024)); // Convert to MB
+      const availableMemory = freeMemory;
+      const memoryUsage = Math.round(((totalMemory - freeMemory) / totalMemory) * 100);
+
+      // Get disk information
+      const { stdout: dfOutput } = await execAsync("df -h / | tail -n 1");
+      const dfParts = dfOutput.trim().split(/\s+/);
+      
+      // Parse disk information - typical format is: Filesystem Size Used Avail Use% Mounted on
+      const diskTotal = parseFloat(dfParts[1].replace('G', '')) || 0;
+      const diskUsed = parseFloat(dfParts[2].replace('G', '')) || 0;
+      const diskFree = parseFloat(dfParts[3].replace('G', '')) || 0;
+
+      // Get OS information
+      const { stdout: osRelease } = await execAsync("cat /etc/os-release");
+      const prettyName = osRelease.match(/PRETTY_NAME="(.*)"/)?.[1] || "Unknown OS";
+      
+      // Get kernel version
+      const { stdout: kernelVersion } = await execAsync("uname -r");
+      
+      // Get architecture
+      const architecture = os.arch();
+
+      return {
+        cpuCores,
+        cpuModel,
+        totalMemory,
+        availableMemory,
+        memoryUsage,
+        diskTotal,
+        diskUsed,
+        diskFree,
+        operatingSystem: prettyName,
+        kernelVersion: kernelVersion.trim(),
+        architecture,
+      };
+    } catch (error) {
+      console.error("Error getting system specifications:", error);
+      // Return fallback values from OS module if command line utilities fail
+      return {
+        cpuCores: os.cpus().length,
+        cpuModel: os.cpus()[0]?.model || "Unknown CPU",
+        totalMemory: Math.round(os.totalmem() / (1024 * 1024)),
+        availableMemory: Math.round(os.freemem() / (1024 * 1024)),
+        memoryUsage: Math.round(((os.totalmem() - os.freemem()) / os.totalmem()) * 100),
+        diskTotal: 0,
+        diskUsed: 0,
+        diskFree: 0,
+        operatingSystem: os.type() + " " + os.release(),
+        kernelVersion: os.release(),
+        architecture: os.arch(),
+      };
+    }
+  }
+
+  async getDockerResources(): Promise<DockerResources> {
+    try {
+      // Get Docker-specific resource consumption stats
+      
+      // Get Docker CPU and memory usage
+      const { stdout: dockerStats } = await execAsync(
+        "docker stats --no-stream --format '{{.CPUPerc}}|{{.MemUsage}}|{{.NetIO}}'"
+      );
+      
+      // Parse stats
+      let totalCpuUsage = 0;
+      let totalMemoryUsage = 0;
+      let totalNetworkRx = 0;
+      let totalNetworkTx = 0;
+      
+      dockerStats.trim().split("\n").forEach(line => {
+        if (!line.trim()) return;
+        
+        const [cpuPerc, memUsage, netIO] = line.split("|");
+        
+        // Parse CPU percentage (format: 0.00%)
+        totalCpuUsage += parseFloat(cpuPerc.replace('%', '')) || 0;
+        
+        // Parse memory usage (format: 100MiB / 16GiB)
+        const memParts = memUsage.split('/');
+        if (memParts.length >= 1) {
+          const usageStr = memParts[0].trim();
+          let value = parseFloat(usageStr.replace(/[^0-9.]/g, '')) || 0;
+          
+          // Convert to MB if needed
+          if (usageStr.includes('GiB') || usageStr.includes('GB')) {
+            value *= 1024;
+          } else if (usageStr.includes('KiB') || usageStr.includes('KB')) {
+            value /= 1024;
+          }
+          
+          totalMemoryUsage += value;
+        }
+        
+        // Parse network I/O (format: 100MB / 200MB)
+        const netParts = netIO.split('/');
+        if (netParts.length >= 2) {
+          const rxStr = netParts[0].trim();
+          const txStr = netParts[1].trim();
+          
+          let rxValue = parseFloat(rxStr.replace(/[^0-9.]/g, '')) || 0;
+          let txValue = parseFloat(txStr.replace(/[^0-9.]/g, '')) || 0;
+          
+          // Convert to KB
+          if (rxStr.includes('MB')) {
+            rxValue *= 1024;
+          } else if (rxStr.includes('GB')) {
+            rxValue *= 1024 * 1024;
+          }
+          
+          if (txStr.includes('MB')) {
+            txValue *= 1024;
+          } else if (txStr.includes('GB')) {
+            txValue *= 1024 * 1024;
+          }
+          
+          totalNetworkRx += rxValue;
+          totalNetworkTx += txValue;
+        }
+      });
+      
+      // Get Docker disk usage
+      const { stdout: dockerDiskUsage } = await execAsync("docker system df --format '{{.Size}}'");
+      let totalDiskUsage = 0;
+      
+      dockerDiskUsage.trim().split("\n").forEach(line => {
+        if (!line.trim()) return;
+        
+        // Parse disk usage (format: 100MB)
+        let value = parseFloat(line.replace(/[^0-9.]/g, '')) || 0;
+        
+        // Convert to GB
+        if (line.includes('MB')) {
+          value /= 1024;
+        } else if (line.includes('KB')) {
+          value /= (1024 * 1024);
+        } else if (line.includes('TB')) {
+          value *= 1024;
+        }
+        
+        totalDiskUsage += value;
+      });
+      
+      // Calculate memory percentage
+      const totalSystemMemory = os.totalmem() / (1024 * 1024); // in MB
+      const memoryPercentage = Math.round((totalMemoryUsage / totalSystemMemory) * 100);
+      
+      return {
+        cpuUsage: Math.round(totalCpuUsage * 10) / 10, // Round to 1 decimal place
+        memoryUsage: Math.round(totalMemoryUsage),
+        memoryPercentage,
+        diskUsage: Math.round(totalDiskUsage * 100) / 100, // Round to 2 decimal places
+        networkRx: Math.round(totalNetworkRx),
+        networkTx: Math.round(totalNetworkTx),
+      };
+    } catch (error) {
+      console.error("Error getting Docker resource usage:", error);
+      return {
+        cpuUsage: 0,
+        memoryUsage: 0,
+        memoryPercentage: 0,
+        diskUsage: 0,
+        networkRx: 0,
+        networkTx: 0,
+      };
+    }
+  }
+
+  async startMultipleContainers(ids: string[]): Promise<boolean[]> {
+    const results: boolean[] = [];
+    
+    for (const id of ids) {
+      const result = await this.startContainer(id);
+      results.push(result);
+    }
+    
+    return results;
+  }
+
+  async stopMultipleContainers(ids: string[]): Promise<boolean[]> {
+    const results: boolean[] = [];
+    
+    for (const id of ids) {
+      const result = await this.stopContainer(id);
+      results.push(result);
+    }
+    
+    return results;
+  }
+
+  async deleteMultipleContainers(ids: string[]): Promise<boolean[]> {
+    const results: boolean[] = [];
+    
+    for (const id of ids) {
+      const result = await this.deleteContainer(id);
+      results.push(result);
+    }
+    
+    return results;
+  }
+
+  async deleteMultipleImages(ids: string[]): Promise<boolean[]> {
+    const results: boolean[] = [];
+    
+    for (const id of ids) {
+      const result = await this.deleteImage(id);
+      results.push(result);
+    }
+    
+    return results;
   }
 }
 

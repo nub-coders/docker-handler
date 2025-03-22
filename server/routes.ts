@@ -200,6 +200,134 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // System specifications route
+  app.get("/api/system/specs", authenticate, async (req: Request, res: Response) => {
+    try {
+      const specs = await storage.getSystemSpecs();
+      res.status(200).json(specs);
+    } catch (error) {
+      console.error("Error fetching system specs:", error);
+      res.status(500).json({ message: "Error fetching system specifications" });
+    }
+  });
+
+  // Docker resource usage route
+  app.get("/api/docker/resources", authenticate, async (req: Request, res: Response) => {
+    try {
+      const resources = await storage.getDockerResources();
+      res.status(200).json(resources);
+    } catch (error) {
+      console.error("Error fetching Docker resources:", error);
+      res.status(500).json({ message: "Error fetching Docker resource usage" });
+    }
+  });
+
+  // Batch operations for containers
+  app.post("/api/containers/batch/start", authenticate, async (req: Request, res: Response) => {
+    try {
+      const { ids } = req.body;
+      
+      if (!Array.isArray(ids) || ids.length === 0) {
+        return res.status(400).json({ message: "Invalid or empty container IDs" });
+      }
+      
+      const results = await storage.startMultipleContainers(ids);
+      const allSucceeded = results.every(result => result === true);
+      
+      if (allSucceeded) {
+        res.status(200).json({ message: "All containers started successfully" });
+      } else {
+        const successCount = results.filter(result => result === true).length;
+        res.status(207).json({ 
+          message: `${successCount} of ${ids.length} containers started successfully`,
+          results
+        });
+      }
+    } catch (error) {
+      console.error("Error batch starting containers:", error);
+      res.status(500).json({ message: "Error starting containers" });
+    }
+  });
+
+  app.post("/api/containers/batch/stop", authenticate, async (req: Request, res: Response) => {
+    try {
+      const { ids } = req.body;
+      
+      if (!Array.isArray(ids) || ids.length === 0) {
+        return res.status(400).json({ message: "Invalid or empty container IDs" });
+      }
+      
+      const results = await storage.stopMultipleContainers(ids);
+      const allSucceeded = results.every(result => result === true);
+      
+      if (allSucceeded) {
+        res.status(200).json({ message: "All containers stopped successfully" });
+      } else {
+        const successCount = results.filter(result => result === true).length;
+        res.status(207).json({ 
+          message: `${successCount} of ${ids.length} containers stopped successfully`,
+          results
+        });
+      }
+    } catch (error) {
+      console.error("Error batch stopping containers:", error);
+      res.status(500).json({ message: "Error stopping containers" });
+    }
+  });
+
+  app.delete("/api/containers/batch", authenticate, async (req: Request, res: Response) => {
+    try {
+      const { ids } = req.body;
+      
+      if (!Array.isArray(ids) || ids.length === 0) {
+        return res.status(400).json({ message: "Invalid or empty container IDs" });
+      }
+      
+      const results = await storage.deleteMultipleContainers(ids);
+      const allSucceeded = results.every(result => result === true);
+      
+      if (allSucceeded) {
+        res.status(200).json({ message: "All containers deleted successfully" });
+      } else {
+        const successCount = results.filter(result => result === true).length;
+        res.status(207).json({ 
+          message: `${successCount} of ${ids.length} containers deleted successfully`,
+          results
+        });
+      }
+    } catch (error) {
+      console.error("Error batch deleting containers:", error);
+      res.status(500).json({ message: "Error deleting containers" });
+    }
+  });
+
+  // Batch operations for images
+  app.delete("/api/images/batch", authenticate, async (req: Request, res: Response) => {
+    try {
+      const { ids } = req.body;
+      
+      if (!Array.isArray(ids) || ids.length === 0) {
+        return res.status(400).json({ message: "Invalid or empty image IDs" });
+      }
+      
+      const results = await storage.deleteMultipleImages(ids);
+      const allSucceeded = results.every(result => result === true);
+      
+      if (allSucceeded) {
+        res.status(200).json({ message: "All images deleted successfully" });
+      } else {
+        const successCount = results.filter(result => result === true).length;
+        res.status(207).json({ 
+          message: `${successCount} of ${ids.length} images deleted successfully`,
+          results
+        });
+      }
+    } catch (error) {
+      console.error("Error batch deleting images:", error);
+      res.status(500).json({ message: "Error deleting images" });
+    }
+  });
+
   const httpServer = createServer(app);
 
   return httpServer;

@@ -79,9 +79,8 @@ console.log("Health check route added");
       console.log("Static file serving setup complete");
     }
 
-    // ALWAYS serve the app on port 3000 (changed from 5000 due to port binding issues)
+    // ALWAYS serve the app on port 5000
     // this serves both the API and the client.
-    // Using port 3000 as an alternative
     const port = 5000;
     console.log(`Attempting to listen on port ${port}...`);
     server.listen({

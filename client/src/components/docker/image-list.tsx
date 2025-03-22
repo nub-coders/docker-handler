@@ -8,6 +8,7 @@ import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { Checkbox } from "@/components/ui/checkbox";
 import { 
   RefreshCw, 
   Server, 
@@ -40,6 +41,8 @@ export default function ImageList({
   const queryClient = useQueryClient();
   const [imageToDelete, setImageToDelete] = useState<Image | null>(null);
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
+  const [selectedImages, setSelectedImages] = useState<string[]>([]);
+  const [isBulkActionDialogOpen, setIsBulkActionDialogOpen] = useState(false);
 
   // Get images
   const { data: images = [] } = useQuery<Image[]>({
@@ -69,6 +72,31 @@ export default function ImageList({
       setIsDeleteDialogOpen(false);
     },
   });
+  
+  // Bulk delete images mutation
+  const bulkDeleteImagesMutation = useMutation({
+    mutationFn: async (imageIds: string[]) => {
+      const res = await apiRequest("DELETE", "/api/images/batch", { ids: imageIds });
+      return res.json();
+    },
+    onSuccess: (data) => {
+      toast({
+        title: "Success",
+        description: data.message || "Selected images deleted successfully",
+      });
+      queryClient.invalidateQueries({ queryKey: ["/api/images"] });
+      setSelectedImages([]);
+      setIsBulkActionDialogOpen(false);
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Error",
+        description: error.message || "Failed to delete selected images",
+        variant: "destructive",
+      });
+      setIsBulkActionDialogOpen(false);
+    },
+  });
 
   const handleDeleteImage = (image: Image) => {
     setImageToDelete(image);
@@ -79,6 +107,50 @@ export default function ImageList({
     if (imageToDelete) {
       deleteImageMutation.mutate(imageToDelete.id);
     }
+  };
+  
+  // Bulk action handlers
+  const handleSelectImage = (imageId: string, checked: boolean) => {
+    if (checked) {
+      setSelectedImages(prev => [...prev, imageId]);
+    } else {
+      setSelectedImages(prev => prev.filter(id => id !== imageId));
+    }
+  };
+  
+  const handleSelectAllImages = (checked: boolean) => {
+    if (checked) {
+      const allIds = filteredImages.map(image => image.id);
+      setSelectedImages(allIds);
+    } else {
+      setSelectedImages([]);
+    }
+  };
+  
+  const confirmBulkDeleteImages = () => {
+    if (selectedImages.length === 0) {
+      toast({
+        title: "No images selected",
+        description: "Please select at least one image",
+        variant: "destructive",
+      });
+      return;
+    }
+    
+    bulkDeleteImagesMutation.mutate(selectedImages);
+  };
+  
+  const openBulkDeleteDialog = () => {
+    if (selectedImages.length === 0) {
+      toast({
+        title: "No images selected",
+        description: "Please select at least one image",
+        variant: "destructive",
+      });
+      return;
+    }
+    
+    setIsBulkActionDialogOpen(true);
   };
 
   const formatCreatedTime = (created: string) => {
@@ -160,6 +232,13 @@ export default function ImageList({
           <Table>
             <TableHeader className="bg-slate-50">
               <TableRow>
+                <TableHead className="w-[50px]">
+                  <Checkbox 
+                    checked={filteredImages.length > 0 && selectedImages.length === filteredImages.length}
+                    onCheckedChange={handleSelectAllImages}
+                    aria-label="Select all images"
+                  />
+                </TableHead>
                 <TableHead>Repository</TableHead>
                 <TableHead>Tag</TableHead>
                 <TableHead>ID</TableHead>
@@ -178,6 +257,13 @@ export default function ImageList({
               ) : (
                 filteredImages.map((image: Image) => (
                   <TableRow key={image.id} className="hover:bg-slate-50">
+                    <TableCell className="w-[50px]">
+                      <Checkbox 
+                        checked={selectedImages.includes(image.id)}
+                        onCheckedChange={(checked) => handleSelectImage(image.id, checked === true)}
+                        aria-label={`Select image ${image.name}:${image.tag}`}
+                      />
+                    </TableCell>
                     <TableCell>
                       <div className="flex items-center">
                         <Server className="text-slate-500 mr-2 h-5 w-5" />
@@ -223,28 +309,25 @@ export default function ImageList({
           </Table>
         </div>
 
-        <div className="px-6 py-4 border-t border-slate-200 flex items-center justify-between">
+        <div className="px-6 py-4 border-t border-slate-200 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
           <div className="text-sm text-slate-500">
-            Showing <span className="font-medium">1</span> to{" "}
-            <span className="font-medium">{filteredImages.length}</span> of{" "}
-            <span className="font-medium">{filteredImages.length}</span> results
+            <span className="font-medium">{selectedImages.length}</span> images selected
           </div>
-          <div className="flex items-center space-x-2">
-            <Button
-              variant="outline"
-              size="sm"
-              disabled={true}
-            >
-              Previous
-            </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              disabled={true}
-            >
-              Next
-            </Button>
-          </div>
+          
+          {selectedImages.length > 0 && (
+            <div className="flex items-center space-x-2">
+              <Button
+                variant="outline"
+                size="sm"
+                className="text-red-600 border-red-600 hover:bg-red-50"
+                onClick={openBulkDeleteDialog}
+                disabled={bulkDeleteImagesMutation.isPending}
+              >
+                <Trash2 className="h-3.5 w-3.5 mr-1" />
+                Delete Selected
+              </Button>
+            </div>
+          )}
         </div>
       </Card>
 
@@ -275,6 +358,39 @@ export default function ImageList({
               className="bg-red-500 hover:bg-red-600"
             >
               {deleteImageMutation.isPending ? "Deleting..." : "Delete"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Bulk Delete Dialog */}
+      <AlertDialog open={isBulkActionDialogOpen} onOpenChange={setIsBulkActionDialogOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle className="flex items-center">
+              <AlertCircle className="h-5 w-5 text-red-500 mr-2" />
+              Delete Selected Images
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              <p className="mb-2">
+                Are you sure you want to delete the {selectedImages.length} selected images?
+              </p>
+              <p className="mb-2">
+                This action may fail if any of the images are being used by containers.
+              </p>
+              <p>
+                This action cannot be undone.
+              </p>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={bulkDeleteImagesMutation.isPending}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={confirmBulkDeleteImages}
+              disabled={bulkDeleteImagesMutation.isPending}
+              className="bg-red-500 hover:bg-red-600"
+            >
+              {bulkDeleteImagesMutation.isPending ? "Deleting..." : "Delete"}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

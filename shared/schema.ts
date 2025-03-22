@@ -49,6 +49,35 @@ export const imageSchema = z.object({
 
 export type Image = z.infer<typeof imageSchema>;
 
+// System specifications schema
+export const systemSpecsSchema = z.object({
+  cpuCores: z.number(),
+  cpuModel: z.string(),
+  totalMemory: z.number(), // In MB
+  availableMemory: z.number(), // In MB
+  memoryUsage: z.number(), // Percentage
+  diskTotal: z.number(), // In GB
+  diskUsed: z.number(), // In GB
+  diskFree: z.number(), // In GB
+  operatingSystem: z.string(),
+  kernelVersion: z.string(),
+  architecture: z.string(),
+});
+
+export type SystemSpecs = z.infer<typeof systemSpecsSchema>;
+
+// Docker resource usage schema
+export const dockerResourcesSchema = z.object({
+  cpuUsage: z.number(), // Percentage of total CPU used by Docker
+  memoryUsage: z.number(), // MB used by Docker
+  memoryPercentage: z.number(), // Percentage of total memory used by Docker
+  diskUsage: z.number(), // GB used by Docker volumes and images
+  networkRx: z.number(), // KB/s received
+  networkTx: z.number(), // KB/s transmitted
+});
+
+export type DockerResources = z.infer<typeof dockerResourcesSchema>;
+
 // Auth schema
 export const loginSchema = z.object({
   username: z.string().min(1, "Username is required"),

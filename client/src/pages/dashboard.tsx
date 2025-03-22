@@ -5,9 +5,11 @@ import Sidebar from "@/components/layout/sidebar";
 import StatsCard from "@/components/docker/stats-card";
 import ContainerList from "@/components/docker/container-list";
 import ImageList from "@/components/docker/image-list";
+import SystemSpecsCard from "@/components/docker/system-specs";
+import DockerResourcesCard from "@/components/docker/docker-resources";
 import { Container, ContainerStats } from "@shared/schema";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Loader2, Container as ContainerIcon, ServerIcon } from "lucide-react";
+import { Loader2, Container as ContainerIcon, ServerIcon, LayoutGrid } from "lucide-react";
 
 export default function Dashboard() {
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
@@ -118,8 +120,14 @@ export default function Dashboard() {
                 />
               </div>
               
+              {/* System specs and Docker resources */}
+              <div className="mb-6 grid grid-cols-1 md:grid-cols-2 gap-6">
+                <SystemSpecsCard />
+                <DockerResourcesCard />
+              </div>
+              
               <Tabs defaultValue="containers" className="w-full">
-                <TabsList className="mb-4 grid grid-cols-2 max-w-[400px]">
+                <TabsList className="mb-4 grid grid-cols-3 max-w-[600px]">
                   <TabsTrigger value="containers" className="flex items-center gap-2">
                     <ContainerIcon className="h-4 w-4" />
                     Containers
@@ -127,6 +135,10 @@ export default function Dashboard() {
                   <TabsTrigger value="images" className="flex items-center gap-2">
                     <ServerIcon className="h-4 w-4" />
                     Images
+                  </TabsTrigger>
+                  <TabsTrigger value="system" className="flex items-center gap-2">
+                    <LayoutGrid className="h-4 w-4" />
+                    System
                   </TabsTrigger>
                 </TabsList>
                 
@@ -147,6 +159,13 @@ export default function Dashboard() {
                     setSearchTerm={setImageSearchTerm}
                     refreshData={() => refetchImages()}
                   />
+                </TabsContent>
+                
+                <TabsContent value="system">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <SystemSpecsCard />
+                    <DockerResourcesCard />
+                  </div>
                 </TabsContent>
               </Tabs>
             </>

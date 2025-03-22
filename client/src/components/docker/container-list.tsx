@@ -9,6 +9,8 @@ import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Card } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Separator } from "@/components/ui/separator";
 import {
   Play,
   Square,
@@ -61,6 +63,9 @@ export default function ContainerList({
   const [isLogViewerOpen, setIsLogViewerOpen] = useState(false);
   const [containerToDelete, setContainerToDelete] = useState<Container | null>(null);
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
+  const [selectedContainers, setSelectedContainers] = useState<string[]>([]);
+  const [isBulkActionDialogOpen, setIsBulkActionDialogOpen] = useState(false);
+  const [bulkAction, setBulkAction] = useState<'start' | 'stop' | 'delete' | null>(null);
 
   // Start container mutation
   const startContainerMutation = useMutation({
@@ -160,6 +165,82 @@ export default function ContainerList({
       });
     },
   });
+  
+  // Bulk action mutations
+  const bulkStartContainersMutation = useMutation({
+    mutationFn: async (containerIds: string[]) => {
+      const res = await apiRequest("POST", "/api/containers/batch/start", { ids: containerIds });
+      return res.json();
+    },
+    onSuccess: (data) => {
+      toast({
+        title: "Success",
+        description: data.message || "Selected containers started successfully",
+      });
+      queryClient.invalidateQueries({ queryKey: ["/api/containers"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/containers/stats"] });
+      setSelectedContainers([]);
+      setIsBulkActionDialogOpen(false);
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Error",
+        description: error.message || "Failed to start selected containers",
+        variant: "destructive",
+      });
+      setIsBulkActionDialogOpen(false);
+    },
+  });
+  
+  const bulkStopContainersMutation = useMutation({
+    mutationFn: async (containerIds: string[]) => {
+      const res = await apiRequest("POST", "/api/containers/batch/stop", { ids: containerIds });
+      return res.json();
+    },
+    onSuccess: (data) => {
+      toast({
+        title: "Success",
+        description: data.message || "Selected containers stopped successfully",
+      });
+      queryClient.invalidateQueries({ queryKey: ["/api/containers"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/containers/stats"] });
+      setSelectedContainers([]);
+      setIsBulkActionDialogOpen(false);
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Error",
+        description: error.message || "Failed to stop selected containers",
+        variant: "destructive",
+      });
+      setIsBulkActionDialogOpen(false);
+    },
+  });
+  
+  const bulkDeleteContainersMutation = useMutation({
+    mutationFn: async (containerIds: string[]) => {
+      const res = await apiRequest("DELETE", "/api/containers/batch", { ids: containerIds });
+      return res.json();
+    },
+    onSuccess: (data) => {
+      toast({
+        title: "Success",
+        description: data.message || "Selected containers deleted successfully",
+      });
+      queryClient.invalidateQueries({ queryKey: ["/api/containers"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/containers/stats"] });
+      setSelectedContainers([]);
+      setIsBulkActionDialogOpen(false);
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Error",
+        description: error.message || "Failed to delete selected containers",
+        variant: "destructive",
+      });
+      setIsBulkActionDialogOpen(false);
+    },
+  });
 
   const handleStartContainer = (container: Container) => {
     startContainerMutation.mutate(container.id);
@@ -191,6 +272,57 @@ export default function ContainerList({
       description: `Restarting container ${container.name}...`,
     });
     restartContainerMutation.mutate(container.id);
+  };
+  
+  // Bulk action handlers
+  const handleSelectContainer = (containerId: string, checked: boolean) => {
+    if (checked) {
+      setSelectedContainers(prev => [...prev, containerId]);
+    } else {
+      setSelectedContainers(prev => prev.filter(id => id !== containerId));
+    }
+  };
+  
+  const handleSelectAllContainers = (checked: boolean) => {
+    if (checked) {
+      const allIds = containers.map(container => container.id);
+      setSelectedContainers(allIds);
+    } else {
+      setSelectedContainers([]);
+    }
+  };
+  
+  const confirmBulkAction = () => {
+    if (selectedContainers.length === 0) {
+      toast({
+        title: "No containers selected",
+        description: "Please select at least one container",
+        variant: "destructive",
+      });
+      return;
+    }
+    
+    if (bulkAction === 'start') {
+      bulkStartContainersMutation.mutate(selectedContainers);
+    } else if (bulkAction === 'stop') {
+      bulkStopContainersMutation.mutate(selectedContainers);
+    } else if (bulkAction === 'delete') {
+      bulkDeleteContainersMutation.mutate(selectedContainers);
+    }
+  };
+  
+  const openBulkActionDialog = (action: 'start' | 'stop' | 'delete') => {
+    if (selectedContainers.length === 0) {
+      toast({
+        title: "No containers selected",
+        description: "Please select at least one container",
+        variant: "destructive",
+      });
+      return;
+    }
+    
+    setBulkAction(action);
+    setIsBulkActionDialogOpen(true);
   };
 
   const formatCreatedTime = (created: string) => {
@@ -280,6 +412,13 @@ export default function ContainerList({
           <Table>
             <TableHeader className="bg-slate-50">
               <TableRow>
+                <TableHead className="w-[50px]">
+                  <Checkbox 
+                    checked={containers.length > 0 && selectedContainers.length === containers.length}
+                    onCheckedChange={handleSelectAllContainers}
+                    aria-label="Select all containers"
+                  />
+                </TableHead>
                 <TableHead>Name</TableHead>
                 <TableHead>Status</TableHead>
                 <TableHead>Image</TableHead>
@@ -298,6 +437,13 @@ export default function ContainerList({
               ) : (
                 containers.map((container) => (
                   <TableRow key={container.id} className="hover:bg-slate-50">
+                    <TableCell className="w-[50px]">
+                      <Checkbox 
+                        checked={selectedContainers.includes(container.id)}
+                        onCheckedChange={(checked) => handleSelectContainer(container.id, checked === true)}
+                        aria-label={`Select container ${container.name}`}
+                      />
+                    </TableCell>
                     <TableCell>
                       <div className="flex items-center">
                         <Box className="text-lg text-slate-500 mr-2 h-5 w-5" />
@@ -429,28 +575,45 @@ export default function ContainerList({
           </Table>
         </div>
 
-        <div className="px-6 py-4 border-t border-slate-200 flex items-center justify-between">
+        <div className="px-6 py-4 border-t border-slate-200 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
           <div className="text-sm text-slate-500">
-            Showing <span className="font-medium">1</span> to{" "}
-            <span className="font-medium">{containers.length}</span> of{" "}
-            <span className="font-medium">{containers.length}</span> results
+            <span className="font-medium">{selectedContainers.length}</span> containers selected
           </div>
-          <div className="flex items-center space-x-2">
-            <Button
-              variant="outline"
-              size="sm"
-              disabled={true}
-            >
-              Previous
-            </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              disabled={true}
-            >
-              Next
-            </Button>
-          </div>
+          
+          {selectedContainers.length > 0 && (
+            <div className="flex items-center space-x-2">
+              <Button
+                variant="outline"
+                size="sm"
+                className="text-green-600 border-green-600 hover:bg-green-50"
+                onClick={() => openBulkActionDialog('start')}
+                disabled={bulkStartContainersMutation.isPending}
+              >
+                <Play className="h-3.5 w-3.5 mr-1" />
+                Start Selected
+              </Button>
+              <Button
+                variant="outline"
+                size="sm" 
+                className="text-red-600 border-red-600 hover:bg-red-50"
+                onClick={() => openBulkActionDialog('stop')}
+                disabled={bulkStopContainersMutation.isPending}
+              >
+                <Square className="h-3.5 w-3.5 mr-1" />
+                Stop Selected
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                className="text-red-600 border-red-600 hover:bg-red-50"
+                onClick={() => openBulkActionDialog('delete')}
+                disabled={bulkDeleteContainersMutation.isPending}
+              >
+                <Trash2 className="h-3.5 w-3.5 mr-1" />
+                Delete Selected
+              </Button>
+            </div>
+          )}
         </div>
       </Card>
 
@@ -496,6 +659,66 @@ export default function ContainerList({
               className="bg-red-500 hover:bg-red-600"
             >
               {deleteContainerMutation.isPending ? "Deleting..." : "Delete"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Bulk Action Dialog */}
+      <AlertDialog open={isBulkActionDialogOpen} onOpenChange={setIsBulkActionDialogOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle className="flex items-center">
+              <AlertCircle className="h-5 w-5 text-red-500 mr-2" />
+              {bulkAction === 'start' && "Start Selected Containers"}
+              {bulkAction === 'stop' && "Stop Selected Containers"}
+              {bulkAction === 'delete' && "Delete Selected Containers"}
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              {bulkAction === 'start' && (
+                <p>
+                  Are you sure you want to start the {selectedContainers.length} selected containers?
+                </p>
+              )}
+              {bulkAction === 'stop' && (
+                <p>
+                  Are you sure you want to stop the {selectedContainers.length} selected containers?
+                  Any processes running inside will be terminated.
+                </p>
+              )}
+              {bulkAction === 'delete' && (
+                <div>
+                  <p className="mb-2">
+                    Running containers will be stopped before deletion.
+                  </p>
+                  <p>
+                    Are you sure you want to delete the {selectedContainers.length} selected containers?
+                    This action cannot be undone.
+                  </p>
+                </div>
+              )}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={
+              bulkStartContainersMutation.isPending || 
+              bulkStopContainersMutation.isPending || 
+              bulkDeleteContainersMutation.isPending
+            }>
+              Cancel
+            </AlertDialogCancel>
+            <AlertDialogAction
+              onClick={confirmBulkAction}
+              disabled={
+                bulkStartContainersMutation.isPending || 
+                bulkStopContainersMutation.isPending || 
+                bulkDeleteContainersMutation.isPending
+              }
+              className={bulkAction === 'delete' ? "bg-red-500 hover:bg-red-600" : ""}
+            >
+              {bulkAction === 'start' && (bulkStartContainersMutation.isPending ? "Starting..." : "Start")}
+              {bulkAction === 'stop' && (bulkStopContainersMutation.isPending ? "Stopping..." : "Stop")}
+              {bulkAction === 'delete' && (bulkDeleteContainersMutation.isPending ? "Deleting..." : "Delete")}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
