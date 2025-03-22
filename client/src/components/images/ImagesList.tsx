@@ -6,11 +6,13 @@ import { Input } from "@/components/ui/input";
 import { Card, CardContent } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useToast } from "@/hooks/use-toast";
+import { useAuth } from "@/lib/auth";
 import BuildImageModal from "./BuildImageModal";
 import PullImageModal from "./PullImageModal";
 
 const ImagesList = () => {
   const { toast } = useToast();
+  const { isAuthenticated, isVisitorMode, showAuthWarning } = useAuth();
   const [searchQuery, setSearchQuery] = useState("");
   const [isBuildModalOpen, setIsBuildModalOpen] = useState(false);
   const [isPullModalOpen, setIsPullModalOpen] = useState(false);
@@ -26,12 +28,18 @@ const ImagesList = () => {
   });
 
   const handleDeleteImage = async (id: string, name: string) => {
+    if (isVisitorMode) {
+      showAuthWarning();
+      return;
+    }
+
     try {
       await deleteImage(id);
       toast({
         title: "Image deleted",
         description: `Image ${name} has been deleted successfully.`
       });
+      refetch();
     } catch (error) {
       toast({
         title: "Failed to delete image",
@@ -42,6 +50,11 @@ const ImagesList = () => {
   };
 
   const handleRunContainer = async (image: string) => {
+    if (isVisitorMode) {
+      showAuthWarning();
+      return;
+    }
+
     try {
       await runContainer({ image });
       toast({
@@ -57,6 +70,22 @@ const ImagesList = () => {
     }
   };
 
+  const handleOpenBuildModal = () => {
+    if (isVisitorMode) {
+      showAuthWarning();
+      return;
+    }
+    setIsBuildModalOpen(true);
+  };
+
+  const handleOpenPullModal = () => {
+    if (isVisitorMode) {
+      showAuthWarning();
+      return;
+    }
+    setIsPullModalOpen(true);
+  };
+
   // Filter images based on search query
   const filteredImages = images?.filter(image => {
     const repoTag = `${image.repository}:${image.tag}`;
@@ -66,27 +95,40 @@ const ImagesList = () => {
 
   return (
     <>
+      {/* Create New Image Banner - Prominent at the top */}
+      <Card className="mb-6 border-2 border-primary-300 bg-gradient-to-r from-primary-50 to-white">
+        <CardContent className="p-6">
+          <div className="flex flex-col md:flex-row justify-between items-center gap-4">
+            <div className="text-center md:text-left">
+              <h2 className="text-xl font-bold text-gray-900 mb-2">Create your own Docker image</h2>
+              <p className="text-gray-600 mb-0">Build custom images with your own Dockerfile or pull from Docker Hub</p>
+            </div>
+            <div className="flex flex-col sm:flex-row gap-3">
+              <Button
+                variant="outline"
+                onClick={handleOpenPullModal}
+                className="border-primary-500 text-primary-700 hover:bg-primary-50"
+                size="lg"
+              >
+                <i className="ri-download-line mr-1 text-lg"></i> Pull Image
+              </Button>
+              <Button
+                variant="default"
+                onClick={handleOpenBuildModal}
+                className="bg-primary-600 hover:bg-primary-700 text-white font-semibold shadow-md"
+                size="lg"
+              >
+                <i className="ri-add-circle-line mr-1 text-lg"></i> Create New Image
+              </Button>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
       <Card className="mb-6">
         <CardContent className="p-6">
           <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6">
             <h2 className="text-lg font-medium text-gray-800">Image Management</h2>
-            <div className="flex space-x-2 flex-wrap">
-              <Button
-                variant="secondary"
-                onClick={() => setIsPullModalOpen(true)}
-                className="bg-secondary-500 hover:bg-secondary-400 text-white"
-              >
-                <i className="ri-download-line mr-1"></i> Pull Image
-              </Button>
-              <Button
-                variant="default"
-                onClick={() => setIsBuildModalOpen(true)}
-                className="bg-primary-600 hover:bg-primary-700 text-white font-semibold"
-                size="lg"
-              >
-                <i className="ri-add-circle-line mr-1"></i> Create New Image
-              </Button>
-            </div>
           </div>
           
           {/* Image search and filter controls */}
