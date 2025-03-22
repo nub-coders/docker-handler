@@ -1,4 +1,4 @@
-import { users, type User, type InsertUser, type Container, type ContainerStats } from "@shared/schema";
+import { users, type User, type InsertUser, type Container, type ContainerStats, type Image } from "@shared/schema";
 import { exec } from "child_process";
 import { promisify } from "util";
 
@@ -12,7 +12,10 @@ export interface IStorage {
   getContainerStats(): Promise<ContainerStats>;
   startContainer(id: string): Promise<boolean>;
   stopContainer(id: string): Promise<boolean>;
+  deleteContainer(id: string): Promise<boolean>;
   getContainerLogs(id: string, lines?: number): Promise<string>;
+  listImages(): Promise<Image[]>;
+  deleteImage(id: string): Promise<boolean>;
 }
 
 export class MemStorage implements IStorage {
@@ -131,6 +134,26 @@ export class MemStorage implements IStorage {
     }
   }
 
+  async deleteContainer(id: string): Promise<boolean> {
+    try {
+      // Check if container is running
+      const containers = await this.listContainers();
+      const container = containers.find(c => c.id === id);
+      
+      // If running, stop it first
+      if (container && container.state === "running") {
+        await this.stopContainer(id);
+      }
+      
+      // Delete the container
+      await execAsync(`docker rm ${id}`);
+      return true;
+    } catch (error) {
+      console.error(`Error deleting container ${id}:`, error);
+      return false;
+    }
+  }
+
   async getContainerLogs(id: string, lines: number = 100): Promise<string> {
     try {
       const { stdout } = await execAsync(`docker logs --tail ${lines} ${id}`);
@@ -138,6 +161,45 @@ export class MemStorage implements IStorage {
     } catch (error) {
       console.error(`Error getting logs for container ${id}:`, error);
       return `Error retrieving logs for container ${id}`;
+    }
+  }
+
+  async listImages(): Promise<Image[]> {
+    try {
+      const { stdout } = await execAsync(
+        'docker images --format "{{.ID}}|{{.Repository}}|{{.Tag}}|{{.Size}}|{{.CreatedAt}}"'
+      );
+
+      const images: Image[] = stdout
+        .trim()
+        .split("\n")
+        .filter(line => line.trim() !== "")
+        .map(line => {
+          const [id, name, tag, size, created] = line.split("|");
+          
+          return {
+            id,
+            name,
+            tag,
+            size,
+            created,
+          };
+        });
+
+      return images;
+    } catch (error) {
+      console.error("Error listing Docker images:", error);
+      return [];
+    }
+  }
+
+  async deleteImage(id: string): Promise<boolean> {
+    try {
+      await execAsync(`docker rmi -f ${id}`);
+      return true;
+    } catch (error) {
+      console.error(`Error deleting image ${id}:`, error);
+      return false;
     }
   }
 }

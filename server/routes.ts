@@ -5,6 +5,16 @@ import session from "express-session";
 import { loginSchema } from "@shared/schema";
 import MemoryStore from "memorystore";
 
+// Extend the session interface to include user property
+declare module "express-session" {
+  interface SessionData {
+    user?: {
+      id: number;
+      username: string;
+    };
+  }
+}
+
 const SessionStore = MemoryStore(session);
 
 export async function registerRoutes(app: Express): Promise<Server> {
@@ -142,6 +152,51 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error) {
       console.error(`Error getting container logs:`, error);
       res.status(500).json({ message: "Error getting container logs" });
+    }
+  });
+
+  // Delete container
+  app.delete("/api/containers/:id", authenticate, async (req: Request, res: Response) => {
+    try {
+      const { id } = req.params;
+      const success = await storage.deleteContainer(id);
+      
+      if (success) {
+        res.status(200).json({ message: "Container deleted successfully" });
+      } else {
+        res.status(500).json({ message: "Failed to delete container" });
+      }
+    } catch (error) {
+      console.error(`Error deleting container:`, error);
+      res.status(500).json({ message: "Error deleting container" });
+    }
+  });
+
+  // Docker image routes
+  app.get("/api/images", authenticate, async (req: Request, res: Response) => {
+    try {
+      const images = await storage.listImages();
+      res.status(200).json(images);
+    } catch (error) {
+      console.error("Error fetching images:", error);
+      res.status(500).json({ message: "Error fetching images" });
+    }
+  });
+
+  // Delete image
+  app.delete("/api/images/:id", authenticate, async (req: Request, res: Response) => {
+    try {
+      const { id } = req.params;
+      const success = await storage.deleteImage(id);
+      
+      if (success) {
+        res.status(200).json({ message: "Image deleted successfully" });
+      } else {
+        res.status(500).json({ message: "Failed to delete image" });
+      }
+    } catch (error) {
+      console.error(`Error deleting image:`, error);
+      res.status(500).json({ message: "Error deleting image" });
     }
   });
 

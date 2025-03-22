@@ -9,7 +9,34 @@ import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Card } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Play, Square, FileText, MoreHorizontal, RefreshCw, Box } from "lucide-react";
+import {
+  Play,
+  Square,
+  FileText,
+  Trash2,
+  RefreshCw,
+  Box,
+  MoreHorizontal,
+  AlertCircle,
+  RotateCw
+} from "lucide-react";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import LogViewer from "./log-viewer";
 
 interface ContainerListProps {
@@ -32,6 +59,8 @@ export default function ContainerList({
   const { toast } = useToast();
   const [selectedContainer, setSelectedContainer] = useState<Container | null>(null);
   const [isLogViewerOpen, setIsLogViewerOpen] = useState(false);
+  const [containerToDelete, setContainerToDelete] = useState<Container | null>(null);
+  const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
 
   // Start container mutation
   const startContainerMutation = useMutation({
@@ -79,6 +108,59 @@ export default function ContainerList({
     },
   });
 
+  // Delete container mutation
+  const deleteContainerMutation = useMutation({
+    mutationFn: async (containerId: string) => {
+      const res = await apiRequest("DELETE", `/api/containers/${containerId}`);
+      return res.json();
+    },
+    onSuccess: (data) => {
+      toast({
+        title: "Success",
+        description: data.message || "Container deleted successfully",
+      });
+      queryClient.invalidateQueries({ queryKey: ["/api/containers"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/containers/stats"] });
+      setIsDeleteDialogOpen(false);
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Error",
+        description: error.message || "Failed to delete container",
+        variant: "destructive",
+      });
+      setIsDeleteDialogOpen(false);
+    },
+  });
+  
+  // Restart container mutation - stops then starts the container
+  const restartContainerMutation = useMutation({
+    mutationFn: async (containerId: string) => {
+      // First stop the container
+      const stopRes = await apiRequest("POST", `/api/containers/${containerId}/stop`);
+      await stopRes.json();
+      
+      // Then start it again
+      const startRes = await apiRequest("POST", `/api/containers/${containerId}/start`);
+      return startRes.json();
+    },
+    onSuccess: (data) => {
+      toast({
+        title: "Success",
+        description: data.message || "Container restarted successfully",
+      });
+      queryClient.invalidateQueries({ queryKey: ["/api/containers"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/containers/stats"] });
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Error",
+        description: error.message || "Failed to restart container",
+        variant: "destructive",
+      });
+    },
+  });
+
   const handleStartContainer = (container: Container) => {
     startContainerMutation.mutate(container.id);
   };
@@ -90,6 +172,25 @@ export default function ContainerList({
   const handleShowLogs = (container: Container) => {
     setSelectedContainer(container);
     setIsLogViewerOpen(true);
+  };
+
+  const handleDeleteContainer = (container: Container) => {
+    setContainerToDelete(container);
+    setIsDeleteDialogOpen(true);
+  };
+
+  const confirmDeleteContainer = () => {
+    if (containerToDelete) {
+      deleteContainerMutation.mutate(containerToDelete.id);
+    }
+  };
+  
+  const handleRestartContainer = (container: Container) => {
+    toast({
+      title: "Restarting container",
+      description: `Restarting container ${container.name}...`,
+    });
+    restartContainerMutation.mutate(container.id);
   };
 
   const formatCreatedTime = (created: string) => {
@@ -257,13 +358,68 @@ export default function ContainerList({
                         >
                           <FileText className="h-5 w-5" />
                         </Button>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          className="text-slate-500 hover:text-slate-700 hover:bg-transparent"
-                        >
-                          <MoreHorizontal className="h-5 w-5" />
-                        </Button>
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="text-slate-500 hover:text-slate-700 hover:bg-transparent"
+                            >
+                              <MoreHorizontal className="h-5 w-5" />
+                            </Button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="end">
+                            {container.state === "running" ? (
+                              <DropdownMenuItem 
+                                onClick={() => handleStopContainer(container)}
+                                disabled={stopContainerMutation.isPending}
+                                className="cursor-pointer"
+                              >
+                                <Square className="h-4 w-4 mr-2 text-red-500" />
+                                Stop Container
+                              </DropdownMenuItem>
+                            ) : (
+                              <DropdownMenuItem 
+                                onClick={() => handleStartContainer(container)}
+                                disabled={startContainerMutation.isPending}
+                                className="cursor-pointer"
+                              >
+                                <Play className="h-4 w-4 mr-2 text-green-500" />
+                                Start Container
+                              </DropdownMenuItem>
+                            )}
+                            
+                            {container.state === "running" && (
+                              <DropdownMenuItem 
+                                onClick={() => handleRestartContainer(container)}
+                                disabled={restartContainerMutation.isPending}
+                                className="cursor-pointer"
+                              >
+                                <RotateCw className="h-4 w-4 mr-2 text-blue-500" />
+                                Restart Container
+                              </DropdownMenuItem>
+                            )}
+                            
+                            <DropdownMenuItem 
+                              onClick={() => handleShowLogs(container)}
+                              className="cursor-pointer"
+                            >
+                              <FileText className="h-4 w-4 mr-2 text-slate-500" />
+                              View Logs
+                            </DropdownMenuItem>
+                            
+                            <DropdownMenuSeparator />
+                            
+                            <DropdownMenuItem 
+                              onClick={() => handleDeleteContainer(container)}
+                              disabled={deleteContainerMutation.isPending}
+                              className="text-red-500 cursor-pointer"
+                            >
+                              <Trash2 className="h-4 w-4 mr-2" />
+                              Delete Container
+                            </DropdownMenuItem>
+                          </DropdownMenuContent>
+                        </DropdownMenu>
                       </div>
                     </TableCell>
                   </TableRow>
@@ -305,6 +461,45 @@ export default function ContainerList({
           onClose={() => setIsLogViewerOpen(false)}
         />
       )}
+
+      <AlertDialog open={isDeleteDialogOpen} onOpenChange={setIsDeleteDialogOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle className="flex items-center">
+              <AlertCircle className="h-5 w-5 text-red-500 mr-2" />
+              Delete Container
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              {containerToDelete && containerToDelete.state === "running" ? (
+                <div>
+                  <p className="mb-2">
+                    This container is currently running. It will be stopped before deletion.
+                  </p>
+                  <p>
+                    Are you sure you want to delete <span className="font-medium">{containerToDelete?.name}</span>?
+                    This action cannot be undone.
+                  </p>
+                </div>
+              ) : (
+                <p>
+                  Are you sure you want to delete <span className="font-medium">{containerToDelete?.name}</span>?
+                  This action cannot be undone.
+                </p>
+              )}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={deleteContainerMutation.isPending}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={confirmDeleteContainer}
+              disabled={deleteContainerMutation.isPending}
+              className="bg-red-500 hover:bg-red-600"
+            >
+              {deleteContainerMutation.isPending ? "Deleting..." : "Delete"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </>
   );
 }

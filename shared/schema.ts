@@ -38,6 +38,17 @@ export const containerStatsSchema = z.object({
 
 export type ContainerStats = z.infer<typeof containerStatsSchema>;
 
+// Docker image schema
+export const imageSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  tag: z.string(),
+  size: z.string(),
+  created: z.string(),
+});
+
+export type Image = z.infer<typeof imageSchema>;
+
 // Auth schema
 export const loginSchema = z.object({
   username: z.string().min(1, "Username is required"),

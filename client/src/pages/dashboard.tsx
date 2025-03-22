@@ -1,11 +1,13 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import Header from "@/components/layout/header";
 import Sidebar from "@/components/layout/sidebar";
 import StatsCard from "@/components/docker/stats-card";
 import ContainerList from "@/components/docker/container-list";
+import ImageList from "@/components/docker/image-list";
 import { Container, ContainerStats } from "@shared/schema";
-import { Loader2 } from "lucide-react";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Loader2, Container as ContainerIcon, ServerIcon } from "lucide-react";
 
 export default function Dashboard() {
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
@@ -55,6 +57,22 @@ export default function Dashboard() {
     refetchStats();
   };
 
+  // State for images
+  const [imageSearchTerm, setImageSearchTerm] = useState<string>("");
+  
+  // Fetch for refetch images
+  const { refetch: refetchImages } = useQuery<any>({
+    queryKey: ["/api/images"],
+    enabled: false,
+  });
+  
+  // Function to refresh all data
+  const refreshAllData = () => {
+    refetchContainers();
+    refetchStats();
+    refetchImages();
+  };
+
   return (
     <div className="min-h-screen flex flex-col md:flex-row">
       <Sidebar isMobileMenuOpen={isMobileMenuOpen} toggleMobileMenu={toggleMobileMenu} />
@@ -64,8 +82,8 @@ export default function Dashboard() {
         
         <main className="flex-1 overflow-y-auto bg-slate-100 p-4 md:p-6 pb-16 md:pb-6">
           <div className="mb-6">
-            <h2 className="text-xl font-semibold text-slate-800 mb-2">Container Dashboard</h2>
-            <p className="text-slate-500">Manage your Docker containers</p>
+            <h2 className="text-xl font-semibold text-slate-800 mb-2">Docker Dashboard</h2>
+            <p className="text-slate-500">Manage your Docker containers and images</p>
           </div>
           
           {(containersLoading || statsLoading) ? (
@@ -75,7 +93,7 @@ export default function Dashboard() {
           ) : containersError ? (
             <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded relative mb-6">
               <strong className="font-bold">Error! </strong>
-              <span className="block sm:inline">Failed to fetch containers. Please try again.</span>
+              <span className="block sm:inline">Failed to fetch data. Please try again.</span>
             </div>
           ) : (
             <>
@@ -100,14 +118,37 @@ export default function Dashboard() {
                 />
               </div>
               
-              <ContainerList 
-                containers={filteredContainers}
-                selectedFilter={selectedFilter}
-                setSelectedFilter={setSelectedFilter}
-                searchTerm={searchTerm}
-                setSearchTerm={setSearchTerm}
-                refreshData={refreshData}
-              />
+              <Tabs defaultValue="containers" className="w-full">
+                <TabsList className="mb-4 grid grid-cols-2 max-w-[400px]">
+                  <TabsTrigger value="containers" className="flex items-center gap-2">
+                    <ContainerIcon className="h-4 w-4" />
+                    Containers
+                  </TabsTrigger>
+                  <TabsTrigger value="images" className="flex items-center gap-2">
+                    <ServerIcon className="h-4 w-4" />
+                    Images
+                  </TabsTrigger>
+                </TabsList>
+                
+                <TabsContent value="containers">
+                  <ContainerList 
+                    containers={filteredContainers}
+                    selectedFilter={selectedFilter}
+                    setSelectedFilter={setSelectedFilter}
+                    searchTerm={searchTerm}
+                    setSearchTerm={setSearchTerm}
+                    refreshData={refreshData}
+                  />
+                </TabsContent>
+                
+                <TabsContent value="images">
+                  <ImageList
+                    searchTerm={imageSearchTerm}
+                    setSearchTerm={setImageSearchTerm}
+                    refreshData={() => refetchImages()}
+                  />
+                </TabsContent>
+              </Tabs>
             </>
           )}
         </main>
