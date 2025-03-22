@@ -2,6 +2,7 @@ import { pgTable, text, serial, integer, boolean } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 
+// User model for authentication
 export const users = pgTable("users", {
   id: serial("id").primaryKey(),
   username: text("username").notNull().unique(),
@@ -16,72 +17,77 @@ export const insertUserSchema = createInsertSchema(users).pick({
 export type InsertUser = z.infer<typeof insertUserSchema>;
 export type User = typeof users.$inferSelect;
 
-// Container schema
+// Container schema for validation
 export const containerSchema = z.object({
   id: z.string(),
   name: z.string(),
   image: z.string(),
+  state: z.string(),
   status: z.string(),
-  state: z.enum(["running", "stopped", "exited", "paused", "created"]),
-  ports: z.array(z.string()).optional(),
-  created: z.string(),
+  created: z.number(),
+  ports: z.array(z.object({
+    IP: z.string().optional(),
+    PrivatePort: z.number(),
+    PublicPort: z.number().optional(),
+    Type: z.string(),
+  })).optional(),
+  stats: z.object({
+    cpu_percent: z.number().optional(),
+    memory_usage: z.number().optional(),
+    memory_limit: z.number().optional(),
+    memory_percent: z.number().optional(),
+    storage_usage: z.number().optional(),
+  }).optional(),
 });
 
 export type Container = z.infer<typeof containerSchema>;
 
-// Container stats schema
-export const containerStatsSchema = z.object({
-  total: z.number(),
-  running: z.number(),
-  stopped: z.number(),
-});
-
-export type ContainerStats = z.infer<typeof containerStatsSchema>;
-
-// Docker image schema
+// Image schema for validation
 export const imageSchema = z.object({
   id: z.string(),
-  name: z.string(),
-  tag: z.string(),
-  size: z.string(),
-  created: z.string(),
+  repoTags: z.array(z.string()).optional(),
+  repoDigests: z.array(z.string()).optional(),
+  created: z.number(),
+  size: z.number(),
+  virtualSize: z.number().optional(),
+  sharedSize: z.number().optional(),
+  labels: z.record(z.string()).optional(),
+  containers: z.number().optional(),
 });
 
 export type Image = z.infer<typeof imageSchema>;
 
-// System specifications schema
-export const systemSpecsSchema = z.object({
-  cpuCores: z.number(),
-  cpuModel: z.string(),
-  totalMemory: z.number(), // In MB
-  availableMemory: z.number(), // In MB
-  memoryUsage: z.number(), // Percentage
-  diskTotal: z.number(), // In GB
-  diskUsed: z.number(), // In GB
-  diskFree: z.number(), // In GB
-  operatingSystem: z.string(),
-  kernelVersion: z.string(),
-  architecture: z.string(),
+// System stats schema
+export const systemStatsSchema = z.object({
+  cpu: z.object({
+    usage: z.number(),
+    count: z.number(),
+  }),
+  memory: z.object({
+    total: z.number(),
+    used: z.number(),
+    free: z.number(),
+    percent: z.number(),
+  }),
+  storage: z.object({
+    total: z.number(),
+    used: z.number(),
+    free: z.number(),
+    percent: z.number(),
+  }),
+  docker: z.object({
+    total: z.number(),
+    used: z.number(),
+    percent: z.number(),
+  }),
 });
 
-export type SystemSpecs = z.infer<typeof systemSpecsSchema>;
-
-// Docker resource usage schema
-export const dockerResourcesSchema = z.object({
-  cpuUsage: z.number(), // Percentage of total CPU used by Docker
-  memoryUsage: z.number(), // MB used by Docker
-  memoryPercentage: z.number(), // Percentage of total memory used by Docker
-  diskUsage: z.number(), // GB used by Docker volumes and images
-  networkRx: z.number(), // KB/s received
-  networkTx: z.number(), // KB/s transmitted
-});
-
-export type DockerResources = z.infer<typeof dockerResourcesSchema>;
+export type SystemStats = z.infer<typeof systemStatsSchema>;
 
 // Auth schema
 export const loginSchema = z.object({
-  username: z.string().min(1, "Username is required"),
-  password: z.string().min(1, "Password is required"),
+  username: z.string(),
+  password: z.string(),
 });
 
 export type LoginCredentials = z.infer<typeof loginSchema>;
